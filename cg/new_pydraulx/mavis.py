@@ -1,97 +1,112 @@
+"""
+    Low-Level Communication with the Mavis API.
+"""
+
 import requests
 import json
-import imp
-try:
-    imp.find_module('zmq') # check if zmq library is available
-    import zmq
-    found = True
-except ImportError:
-    found = False
 
-class Mavis:
-    base_url = 'http://localhost:3000'
+class Mavis(object):
+
+    session = None
+    """The encrypted session cookie identifying this particular Mavis instance."""
+
+    def __init__(self, username, password, host = 'localhost', port = '3000', loginUrl = 'api/Users/login'):
+        """
+            Please see the docs concerning Mavis authentication.
+        """
+
+        self.host = host
+        self.port = port
+        self.username = username
+
+        self.query('post', loginUrl, {'password':password, 'username': username})
+
+    def get(self, path, **params):
+        """ READ """
+        return self.query('get', path, data = None, **params).json()
+
+    def post(self, path, data, **params):
+        """ CREATE """
+        return self.query('post', path, data = data, **params).json()
+
+    def put(self, path, data, **params):
+        """ UPDATE """
+        return self.query('put', path, data = data, **params).json()
+
+    def delete(self, path, **params):
+        """ DELETE """
+        return self.query('delete', path, data = None, **params).json()
 
     def getEntity(self, entityId):
+        query_filter = '?filter[include]=publishes'
+        url = '/api/Entities/' + str(entityId) + query_filter
+        return self.get(url)
+
+    def getProject(self, projectNameStr):
+        query_filter = '?filter[where][templateType]=project'
+        query_filter += '&filter[where][name]=' + projectNameStr
+        url = '/api/Entities/findOne' + query_filter
+
+        return self.get(url)
+
+    def entityForPath(self, entityPath):
+        query_filter = '?filter[where][path]=' + entityPath
+        url =   '/api/Entities/findOne' + query_filter
+
+        return self.get(url)
+
+    def query(self, method, path, data = None, **params):
+        """
+            Perform the Mavis query.
+        """
+
+        contentType = 'application/json'
+
+        if isinstance(data, dict) or isinstance(data, list): data = json.dumps(data)
+        elif isinstance(data, str): contentType = 'text/plain'
+        elif data is not None:
+            raise TypeError('Data passed to Mavis must be a dictionary, list '
+              'or string [%s given]' % type(data))
+
+        # construct the URL
+        if path[0] != '/': path = '/%s' % path
+        url = ''.join(['http://', self.host, ':', self.port, path])
+
+        # print url
         try:
-            response = self._http_get(self.base_url + '/api/Entities/' + str(entityId) + '?filter={"include":"publishes"}' )
+            resp = getattr(requests, method)(
+                url,
+                data            = data,
+                params          = params,
+                allow_redirects = False,
+                cookies         = self.session,
+                headers         = {'content-type': contentType}
+            )
+        except requests.exceptions.ConnectionError:
+            raise MavisError('Connection Refused - Mavis may be offline or unreachable.')
         except Exception as e:
-            print e
-            return None
+            raise MavisError(500, e.args[0])
 
-        return response.json()
+        if resp.cookies:
+            self.session = resp.cookies
 
-    def getPlate(self, id):
-        return requests.get('http://localhost:3000/api/Entities/' + str(id), self._get_token() ).json()
+        if resp.status_code > 399 and resp.status_code != 404:
+            try: message = resp.json()['error']
+            except: message = resp.text
+            raise MavisError(resp.status_code, message)
 
-    def getProject(self, id):
-    	print "  | mavis.getProject()";
-    	print "  | \\";
-    	x = '{"where": {"templateType":"project", "name":"'+id+'"}}';
-    	try:
-            response = self._http_get(self.base_url + '/api/Entities?filter=' + x )
-        except Exception as e:
-            print e
-            return None
+        return resp
 
-        return response.json()
-    def createActiviy(self, _json):
-        # TODO: implement http post to activity
-        return
+class MavisError(Exception):
+    """Pass through class to easily identify MavisErrors"""
 
+    def __init__(self, code, message = None):
+        if isinstance(code, str):
+            message = code
+            code = 500
 
-
-
-
-
-    def __init__(self, token, debug=True):
-        self._token = token
-        # if found:
-        #     print "Detected zmq library"
-        #     print zmq.pyzmq_version()
-
-        # if you need to print some logs, pass second paramater as True
-        self._isDebug = debug
-
-    def _get_token(self):
-
-        return { 'access_token': self._token }
-
-    def _http_get(self, url):
-        """Perform http get request
-
-        If request is bad (a 4XX client error or 5XX server error response),
-        we raise exception
-        """
-
-        r = requests.get(url, self._get_token())
-
-        if self._isDebug:
-            print "  | | Http request url: {}".format(r.url)
-            print "  | | Http request status: {}".format(r.status_code)
-
-        if r.status_code != 200:
-            r.raise_for_status()
-
-        return r
-
-    def _http_post(self, url, data):
-        """Perform http post request
-        """
-        return
-
-    def _http_put(self, url, data):
-        """Perform http put request
-        """
-        return
-
-    def _http_delete(self, url):
-        """Perform http delete request
-        """
-        return
-
-
-
-
+        self.errno = code
+        Exception.__init__(self, message)
 
 
 
@@ -108,10 +123,24 @@ class Mavis:
 
 def main():
     # unittest.main()
+    # return
+    conn =  Mavis('trevor', 'password');
 
-    conn = Mavis('1XV6iI6zXMM9xNl3hGBHGIJGdpytyrywyny3n86DZhRIrrUns9OkXBXEkFwJtF8C')
-    data = conn.getEntity(1)
-    # print data
+    entityId = 21
+
+    # Step 1
+    data = conn.getEntity(entityId)
+    if 'error' in data:
+        print '\n404: NOT FOUND\t Entity#%s\n'%entityId; return
+
+
+    print 'Entity#%s json:\n%s\n'%(data['id'], data)
+
+    # Step 2
+    project = conn.getProject(data['project'])
+    print 'Project for Entity#%s:\n%s\n'%(data['id'], project)
+
+
 
 
 if __name__ == '__main__':

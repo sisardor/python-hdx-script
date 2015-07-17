@@ -16,7 +16,7 @@ standalone=False
 #     import nuke
 # except ImportError,e:
 #     standalone=True
-conn = mavis.Mavis('1XV6iI6zXMM9xNl3hGBHGIJGdpytyrywyny3n86DZhRIrrUns9OkXBXEkFwJtF8C')
+conn = mavis.Mavis('trevor', 'password');
 # spp(sys.argv)
 # sleep(10)
 PROJECT_DEFAULTS = {'colorspace': 'Linear', 'xResolution': 1080, 'yResolution': 1080, 'pixelAspect': 1, 'filter': 0, 'CDL': 0}
@@ -40,7 +40,7 @@ def importPlateAction(*args, **kwargs):
     workingValues=PROJECT_DEFAULTS
 
     #search for project defaults
-    project = TEST_PROJECT # conn.getProject( mavisEntity['project'] )[0]
+    project = conn.getProject( mavisEntity['project'] )[0]
     if project and project.has_key('fields'):
         if project['fields'].has_key('defaults'):
             print "found defaults"
@@ -92,8 +92,9 @@ def importPlateAction(*args, **kwargs):
     sequence = "%s.%s.%s" %(tokens[0], escape, tokens[2])
     print "\t | sequence %s" %sequence
     outputPath = os.path.join(outputPath, os.path.basename(sequence))
-    outputPath =os.path.join("/mnt/x3/", outputPath)
+    outputPath = os.path.join("/mnt/x3/", outputPath)
     print "\t | %s \n"%workingValues
+
 
     outformat = "%s %s %s" %(workingValues['xResolution'],  workingValues['yResolution'],  workingValues['pixelAspect'])
 
@@ -110,7 +111,8 @@ def importPlateAction(*args, **kwargs):
             'writeProxy' : {'nodeType':'Write', 'args':[], 'kwargs': {'name':'writeProxy', 'file':'sequence', 'first':start, 'last':end, 'raw':1}  },
             }
     else:
-        nukeNodes           = mavisEntity['nukeNodes']
+        nukeNodes = mavisEntity['nukeNodes']
+
     print "Step 3) nukeNodes"
     print "\t | %s \n"%nukeNodes
 
@@ -129,18 +131,18 @@ def importPlateAction(*args, **kwargs):
             print "\t | [%s] \t %s"%(aNodeName, aNode)
             nukeNodes[aNodeName]['node'] = nodeFactory(aNode)
 
+
+        #SET VALUES
+        nukeNodes['read1']['node'].knob("file").setValue( sequence )
+        print "start %s end %s" %(str(start), str(end))
+        nuke.Root().knob('first_frame').setValue(float(start))
+        nuke.Root().knob('last_frame').setValue(float(end))
+        nuke.Root().knob('frame').setValue(float(start))
+
+        #we will be dealing with nodeFlow[-1] to get the last node in the tree.
+        #this means appending to the list whenever we connect anything to update the last item
+        nodeFlow=[ nukeNodes['read1']['node'] ]
         sys.exit("Step 3) importPlateAction:")
-        # #SET VALUES
-        # nukeNodes['read1']['node'].knob("file").setValue( sequence )
-        # print "start %s end %s" %(str(start), str(end))
-        # nuke.Root().knob('first_frame').setValue(float(start))
-        # nuke.Root().knob('last_frame').setValue(float(end))
-        # nuke.Root().knob('frame').setValue(float(start))
-
-        # #we will be dealing with nodeFlow[-1] to get the last node in the tree.
-        # #this means appending to the list whenever we connect anything to update the last item
-        # nodeFlow=[ nukeNodes['read1']['node'] ]
-
         # #do the resize in CINEON colourspace as conversion then resize can crush color values
         # #For this the best colorspace is pLogLin.
         # print "line180 input and working"
@@ -313,6 +315,10 @@ def nodeFactory(nodeDict):
     All values must exist, but may be empty.
     Return a pointer to the newly created item or None on error
     '''
+    # print '\t |\t\\'
+    print '\t |\t + nodeFactory(): `%s`'%nodeDict['nodeType']
+    print '\t |\t'
+    return None
     try:
         if hasattr(nuke.nodes, nodeDict['nodeType']):
             #get a pointer to the function
@@ -326,10 +332,6 @@ def nodeFactory(nodeDict):
         print e
         print nodeDict
         return None
-
-
-
-
 
 
 
@@ -363,7 +365,7 @@ if __name__ == '__main__':
 
 
     if args and args.has_key('entity'):
-        mavisEntity = TEST_ENTITY # conn.getEntity(21)
+        mavisEntity = conn.getEntity(21)
 
 
     if not mavisEntity:

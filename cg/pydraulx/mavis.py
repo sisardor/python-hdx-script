@@ -10,7 +10,7 @@ class Mavis(object):
     session = None
     """The encrypted session cookie identifying this particular Mavis instance."""
 
-    def __init__(self, username, password, host = 'snake', port = '80', loginUrl = 'users/login'):
+    def __init__(self, username, password, host = 'localhost', port = '3000', loginUrl = 'api/users/login'):
         """
             Please see the docs concerning Mavis authentication.
         """
