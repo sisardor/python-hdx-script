@@ -3,32 +3,26 @@ import os, sys
 import functools
 import copy
 import argparse
-# import texttable as tt
 
-# tab = tt.Texttable()
-
-# x = [[]] # The empty row will have the header
-
-# for i in range(1,11):
-#     x.append([i,i**2,i**3])
-
-# tab.add_rows(x)
-# tab.set_cols_align(['r','r','r'])
-# tab.header(['Number', 'Number Squared', 'Number Cubed'])
-# print tab.draw()
-
-
-# sys.exit("Step 3) importPlateAction:")
 
 sys.path.append("/hdx/cg/new_pydraulx")
 
 import imageHeaderInfo
 
 import mavis
+standalone=False
+
+# try:
+#     import nuke
+# except ImportError,e:
+#     standalone=True
 conn = mavis.Mavis('1XV6iI6zXMM9xNl3hGBHGIJGdpytyrywyny3n86DZhRIrrUns9OkXBXEkFwJtF8C')
 # spp(sys.argv)
 # sleep(10)
 PROJECT_DEFAULTS = {'colorspace': 'Linear', 'xResolution': 1080, 'yResolution': 1080, 'pixelAspect': 1, 'filter': 0, 'CDL': 0}
+
+TEST_ENTITY = {"root":"/","project":"andreas","templateType":"asset","path":"/andreas/plates/rr_1680_plate","name":"rr_1680_plate","fields":{"inputStartFrame":110,"startFrame":1001,"endFrame":23002,"inputColorSpace":"Cineon","inputX":1080,"inputY":720,"head":10,"tail":23000},"createdBy":"trevor","createdAt":"2015-07-14T22:41:53.985Z","id":21,"type":"plates","libraryIds":[],"importFilepath":"import/andreas/plates/rr_1680/rr_1680_bg2.%04d.dpx","publishes":[{"root":"/hdx","version":0,"path":"/hdx/movie_projects/andreas/shots/is_010","source":"/hdx/movie_projects/andreas/shots/is_010","description":"Desc","project":"andreas","createdBy":"chris","createdAt":"2015-07-17T00:31:55.417Z","id":4,"entityId":21}]}
+TEST_PROJECT = {"root":"/hdx","project":"andreas","templateType":"project","path":"/movie_projects/andreas","name":"andreas","projectLibrary":"1","fields":{"project_name":"andreas","project_root":"/tmp/movie_projects/andreas","status":"Bidding","project_resolution":"2k_Super35_24p","colorspace_settings":"AlexaV3LogC","3d_resolution":"ViperANA_2k 1920 1080 2.37","supervisor":"Colin Strause","2d_supervisor":"Melanie Lowe","2d_lead":"Randy Starr","3d_lead":"Jarrod Avalos","producer":"Jeff Atherton","coordinator":"CJ Cole","aspect_ratio":"2.4","protection_ratio":"2.4"},"createdBy":"chris","createdAt":"2015-07-14T22:41:54.012Z","updatedAt":"2015-07-14T22:41:54.206Z","id":23,"type":"movie_projects","libraryIds":[1]}
 
 
 def importPlateAction(*args, **kwargs):
@@ -46,7 +40,7 @@ def importPlateAction(*args, **kwargs):
     workingValues=PROJECT_DEFAULTS
 
     #search for project defaults
-    project = conn.getProject( mavisEntity['project'] )[0]
+    project = TEST_PROJECT # conn.getProject( mavisEntity['project'] )[0]
     if project and project.has_key('fields'):
         if project['fields'].has_key('defaults'):
             print "found defaults"
@@ -369,7 +363,7 @@ if __name__ == '__main__':
 
 
     if args and args.has_key('entity'):
-        mavisEntity = conn.getEntity(21)
+        mavisEntity = TEST_ENTITY # conn.getEntity(21)
 
 
     if not mavisEntity:
