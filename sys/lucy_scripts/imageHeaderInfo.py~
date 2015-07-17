@@ -1,0 +1,313 @@
+import os
+import sys
+import struct
+import subprocess
+import traceback
+
+sys.path.append("/hdx/2d/undistort/python")
+exr=True
+try:
+    import OpenEXR
+except ImportError, e:
+    #if we are running this from python2.6 we have no OpenEXR module
+    #it is possible we are not trying to deal with exr in this case
+    print "No EXR module"
+    exr=False
+import EXIF_Info
+#test cases:
+#/hdx/sys/python/bin/python2.7 /hdx/sys/lucy_scripts/imageHeaderInfo.py /hdx/projects/hdx_rnd/assets/cgTextures/unapproved_ref/TrevorTifTest.tif
+#/hdx/sys/python/bin/python2.7 /hdx/sys/lucy_scripts/imageHeaderInfo.py /hdx/projects/midnight/shots/ha_101_3090/images/3d_renders/07_10_an_ha_101_3090_Lighting_v03_ANA_LinP_MATTE/07_10_an_ha_101_3090_Lighting_v03_ANA_LinP_MATTE.0014.exr
+#/hdx/sys/python/bin/python2.7 /hdx/sys/lucy_scripts/imageHeaderInfo.py /mnt/x1/hdx/cg/maya/scripts/hdxBrowser/trevorDev/testPlate/TC_066_3115.1001.dpx 
+#/hdx/sys/python/bin/python2.7 /hdx/sys/lucy_scripts/imageHeaderInfo.py /mnt/x7/projects/andreas/assets/taylorAndClay1170/textures/model/ForTrevor/nm7_c7368.cr2
+#/hdx/sys/python/bin/python2.7 /hdx/sys/lucy_scripts/imageHeaderInfo.py /hdx/library/uploads/element_clips/whistler_2014/Red_epic/scans/A003_1225JV/A003_1225JV.RDM/A003_C005_1225AY.RDC/A003_C005_1225AY_009.R3D
+
+
+def makeThumb(filePath, inPath, outPath):
+    cmd = r'/mnt/x1/hdx/cg/maya/scripts/hdxBrowser/trevorDev/ffmpeg -start_number %s -i "%s" -vf "sws_flags=lanczos;scale=w=250:h=140, scale=h=ih/sar, setsar=1:1, pad=width=250:height=140:y=(oh-ih)/2:color=black, lutrgb=r=gammaval ( .4545 ) :g=gammaval ( .4545 ) :b=gammaval ( .4545 )" -y %s' %(frameNumber, inPath, outPath)
+    ffmpeg = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ffmpeg.communicate()
+    returncode = ffmpeg.returncode or 0
+    
+    if returncode is 0:
+        print "INFO: Thumbnail successfully created\n"
+    else:
+        print "WARNING: Thumbnail creation failed [%d]" % returncode
+        print ffmpeg.communicate(), "\n"
+
+        
+def thumbDirectory(dirPath):
+    files=[os.path.join(dirPath, x) for x in os.path.listdir(dirPath) if os.path.isfile(x)]
+    for aFile in files:
+        path, ext=os.path.splitext(aFile)
+        newFilePath = "%s_thumb.%s" %(path, ext)
+        makeThumb(dirPath, aFile, newFilePath)
+
+        
+def r3dHeaderInfo(filePath):
+    '''
+    NOTE: this is experimental and NOT to be used.
+    http://s111.photobucket.com/user/im_thatoneguy/media/REDCodeFileHeader12-15-07c.gif.html
+    http://www.reduser.net/forum/archive/index.php/t-6453.html
+    '''
+    rDict={}
+    data = open(filePath, 'r+b')
+    endian=">"
+    unsignedshort = "%sH"%endian
+    unsignedlong = "%sL"%endian
+    aChar = "%ss"%endian
+    
+    data.seek(4)
+    stringValue=""
+    for aVal in range(int(4)):
+        stringValue = stringValue+struct.unpack_from(aChar, data.read(1))[0]
+        
+    u1 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    aval=""
+    for aVal in range(int(2)):
+        aval = aval+struct.unpack_from(aChar, data.read(1))[0]
+        
+    data.seek(8)
+    pad1 = struct.unpack_from(unsignedshort, data.read(12))[0]
+    print pad1
+    
+    #x2 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    #x1 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    #x2 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    #x1 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    #x2 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    
+    endianData =data.read(20)
+    x1 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    x2 = struct.unpack_from(unsignedshort, data.read(2))[0]
+    
+    y = struct.unpack_from(unsignedlong, data.read(4))[0]
+    framerateN = struct.unpack_from(unsignedlong, data.read(4))[0]
+    framerateD = struct.unpack_from(unsignedshort, data.read(2))[0]
+    fileNameStringValue=""
+    for aVal in range(int(13)):
+        fileNameStringValue = fileNameStringValue+struct.unpack_from(aChar, data.read(1))[0]
+    print x1
+    print x2
+    print "y: " +y
+    print framerateN
+    print framerateD
+    print u1
+    print aval
+    
+    print stringValue
+    print fileNameStringValue
+    data.close()
+
+    
+def dpxHeaderInfo(filePath):
+    '''
+    http://www.fileformat.info/format/dpx/egff.htm 
+    http://www.simplesystems.org/users/bfriesen/dpx/S268M_Revised.pdf 
+    read the header data from the selected .dpx
+    return a dict with the fo9llowing values:
+    {fileName:str, 'colorspace':str, x:int, y:int, 'pixelAspectRatio':str}
+    
+    NB: it is entirely possible that this data is garbage. If it is, nuke will read the aspect ratio incorrectly
+    it is possible to write the specified values into the dpx. We should add provision for that 
+    '''
+    rDict={}
+    data = open(filePath, 'r+b')
+    byteOrder = data.read(8)
+    byteFormat = '>I' if byteOrder == 'SDPX' else '<I'
+    
+    data.seek(36)
+    fileName=data.read(100)
+    rDict['fileName'] = fileName
+    
+    data.seek(801)
+    transferCharacteristic = struct.unpack_from('>B', data.read(1))[0]
+
+    #http://www.fileformat.info/format/dpx/egff.htm #3 changed to Cineon
+    characteristicLookup={0:"User-defined", 1: "Printing density", 2: "Linear", 3: "Cineon",
+    4: "Unspecified video", 5: "SMPTE 240M", 6: "CCIR 709-1", 7: "CCIR 601-2 system B or G",
+    8: "CCIR 601-2 system M", 9: "NTSC composite video", 10: "PAL composite video", 11: "Z linear", 12 : "Z homogeneous"
+    }
+    
+    try:
+        rDict['colorspace'] = characteristicLookup[transferCharacteristic]
+    except KeyError:
+        pass
+        
+    data.seek(1424)
+    xSize = struct.unpack_from('>I', data.read(4))
+    ySize = struct.unpack_from('>I', data.read(4))
+    rDict['x']=xSize[0]
+    rDict['y']=ySize[0]
+    
+    data.seek(1628)
+    pixAspectRatioX=struct.unpack_from('>L', data.read(4))[0]
+    pixAspectRatioY=struct.unpack_from('>L', data.read(4))[0]
+    #rDict['pixelAspectRatio']="%s:%s"%(str(pixAspectRatioX), str(pixAspectRatioY))
+    rDict['pixelAspectRatio']="%s"%(str(pixAspectRatioX))
+
+    data.close()
+    return rDict
+
+    
+    
+def jpgHeaderInfo(imagePath):
+    '''
+    not sure how useful this will be, but included for completeness
+    returns width and height
+    '''
+    rDict={}
+    data = open(filePath, 'r+b')
+    data.seek(2)
+    imageWidth=data.read(2)
+    imageHeight=data.read(2)
+
+    rDict['x'] = imageWidth
+    rDict['y'] = imageHeight
+    data.close()
+    return rDict
+
+
+def exifHeaderInfo(imagePath):
+    with open(imagePath, 'rb') as imageFile:
+        tags=EXIF_Info.process_file(imageFile)
+        #remove non-printable (binary) values
+        if tags.has_key("JPEGThumbnail"):
+            tags.pop("JPEGThumbnail")
+        if tags.has_key("EXIF UserComment"):
+            tags.pop("EXIF UserComment")
+    return tags
+    
+def tiffHeaderInfo(imagePath):
+    '''
+    http://partners.adobe.com/public/developer/en/tiff/TIFF6.pdf
+    not sure how useful this will be, but included for completeness
+    returns width and height
+    '''
+    rDict={}
+    data = open(filePath, 'r+b')
+    endianData =data.read(2)
+    endian=">"
+    if endianData == "II":
+        endian="<"
+    unsignedshort = "%sH"%endian
+    unsignedlong = "%sL"%endian
+    aChar = "%ss"%endian
+    data.seek(4)
+    allFields=[]
+    ifdOffset = struct.unpack_from(unsignedlong, data.read(4))[0]
+    valueTypeDict={1:"BYTE", 2:"ASCII", 3:"SHORT", 4:"LONG", 5:"RATIONAL"}
+    tagDict={256: ('x',None), 257: ('y',None), 258: ('bitsPerSample', None), 
+                    259:('compression', {1:"None", 2:"CCITT(huffman)", 3:"32773"}), 
+                    262: ("photometricInterpretation",  {0:'whiteZero',1:'blackZero',2:'RGB', 3:'palletteColor',4:'transparencyMask'}), 
+                    270: ('comment', None), 273: ('stripOffsets', None), 274: ('orientation', None), 277: ('samplesPerPixel', None), 
+                    279: ('stripByteCounts', None), 282: ('xPerUnit', None), 283: ('yPerUnit', None), 284: ('planarConfiguration', None),
+                    296: ('resolutionUnit', {1:'None',2:'inch', 3:'centimeter'}), 301: ('transferFunction', None), 305: ('dcc', None), 
+                    306: ('date', None), 315: ('user', None), 316: ('machine', None)}
+    while ifdOffset and ifdOffset >0:
+        try:
+            ifdBlock = data.seek(ifdOffset)
+            numberOfFields=struct.unpack_from(unsignedshort, data.read(2))[0]
+            for aField in range(numberOfFields):
+                # tag, type, #ofValues, offset to value OR value itself (if short or long)
+                #1 = BYTE 8-bit unsigned integer, 2 = ASCII 8-bit byte 
+                #3 = SHORT 16-bit (2-byte) unsigned integer.
+                #4 = LONG 32-bit (4-byte) unsigned integer, 5 = RATIONAL (2 longs) 
+                tag = struct.unpack_from(unsignedshort, data.read(2))[0] #2bytes
+                valueType = struct.unpack_from(unsignedshort, data.read(2))[0] #2bytes
+                numberOfValues = struct.unpack_from(unsignedlong, data.read(4))[0]#4bytes
+                valueOffset = struct.unpack_from(unsignedlong, data.read(4))[0]#4bytes
+                
+                if valueType == 2:
+                    currentOffset=data.tell()
+                    data.seek(valueOffset)
+                    stringValue=""
+                    for aVal in range(int(numberOfValues)):
+                        stringValue = stringValue+struct.unpack_from(aChar, data.read(1))[0]
+                    valueOffset = stringValue.strip("\x00") #remove the null termination from the string
+                    data.seek(currentOffset)
+                valueTypeString = valueTypeDict[valueType] if valueTypeDict.has_key(valueType) else valueType
+                tagString=tagDict[tag][0]
+                tagVal=None
+                if tagDict[tag][1] is None:
+                    tagVal=valueOffset
+                else:
+                    if tagDict[tag][1].has_key(valueOffset):
+                        tagVal = tagDict[tag][1][valueOffset]
+                    else:
+                        tagVal="unknown"
+                rDict[tagString] = tagVal
+                #allFields.append((tag, valueTypeString, numberOfValues, valueOffset))
+            ifdOffset = struct.unpack_from(unsignedlong, data.read(4))[0]
+        except Exception, e:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            traceback.print_exception(exc_type, exc_value, exc_traceback, limit=5, file=sys.stdout)
+            break
+
+    data.close()
+    return rDict
+
+    
+def exrHeaderInfo(imagePath):
+    '''
+    check if the EXR is valid, read the header and return a key, value dict of its values
+    '''
+    if not 'OpenEXR' in sys.modules.keys():
+        print "No openEXR module"
+        return
+        
+    #check it is a valid EXR
+    if OpenEXR.isOpenExrFile(imagePath):
+        infile = OpenEXR.InputFile(imagePath)
+        
+    if not infile.isComplete():
+        print "Invalid EXR: %s" %imagePath
+        #return True here as we still want the directory scan to continue
+        return True
+
+    EXRheader = infile.header()
+    rDict = {}
+    for k,v in EXRheader.iteritems():
+        rDict[k]=v
+        #print k,v
+        
+    return rDict
+    
+def imageHeader(filePath):
+    '''
+    wrapper to decide which function to call.
+    Currently only supports EXR and DPX
+    '''
+    funcDict = {'.exr':exrHeaderInfo, '.dpx':dpxHeaderInfo, '.tif':tiffHeaderInfo, ".cr2":exifHeaderInfo, ".R3D":r3dHeaderInfo}
+    if os.path.exists(filePath) and os.path.isfile(filePath):
+        filestart, extension=os.path.splitext(filePath)
+        if extension =='.exr' and not exr:
+            print "ERROR: EXR module not available - returning None"
+            return None
+            
+        if not funcDict.has_key(extension):
+            print "Unknown fileType : %s" %extension
+        else:
+            print "processing %s with function %s" %(filePath, extension)
+            rVal = funcDict[extension](filePath)
+            return rVal
+        return None
+                    
+                    
+if __name__ == '__main__':
+    args=sys.argv[1:]
+    filePath = args[0]
+    rVal = imageHeader(filePath)
+    if rVal:
+        for k,v in rVal.iteritems():
+            try:
+                print "%s : %s" %(k,str(v))
+            except:
+                print "ERROR: parsing values"
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                traceback.print_exception(exc_type, exc_value, exc_traceback, limit=5, file=sys.stdout)
+                print k
+                print v
+                continue
+    
+
+    
